@@ -22,10 +22,10 @@ jobs:
       detail_link_text: "[see detail](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
     steps:
       - name: Set webhook Url
-        run: echo "WEBHOOK_URL=${HOOK_URL || DEFAULT_HOOK_URL}" >> $GITHUB_ENV
+        run: echo "WEBHOOK_URL=${HOOK_URL}" >> $GITHUB_ENV
         env:
           DEFAULT_HOOK_URL: 'https://slack.rulewatcher.com/hooks/p89egcpc3bdgtmaxgzouzpwidc' # 02dev-alert
-          HOOK_URL: ${{ secrets.HOOK_URL || DEFAULT_HOOK_URL }}
+          HOOK_URL: ${{ secrets.HOOK_URL || env.DEFAULT_HOOK_URL }}
 
       - name: type before-deploy
         if: ${{ inputs.type == 'before-deploy' }}
