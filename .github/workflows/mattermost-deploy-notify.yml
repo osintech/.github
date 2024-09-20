@@ -1,0 +1,40 @@
+on:
+  workflow_call:
+    inputs:
+      usename:
+        required: false
+        type: string
+      type:
+        required: false
+        type: string
+      environment:
+        required: false
+        type: string
+    secrets:
+      HOOK_URL:
+        required: false
+
+jobs:
+  NotifyMatterMost:
+    runs-on: ubuntu-latest
+    env:
+      repo_link_text: "[${{ github.repository }}](${{ github.server_url }}/${{ github.repository }})"
+      detail_link_text: "[see detail](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+    steps:
+      - name: type before-deploy
+        if: ${{ inputs.type == 'before-deploy' }}
+        uses: komarnitskyi/action-mattermost-notification@v0.1.2-beta
+        with:
+          webhook: ${{ secrets.HOOK_URL }}
+          text: "🏁 Start Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
+          username: 'DeployBot'
+          icon_emoji: ":rocket:"
+
+      - name: type after-deploy
+        if: ${{ inputs.type == 'after-deploy' }}
+        uses: komarnitskyi/action-mattermost-notification@v0.1.2-beta
+        with:
+          webhook: ${{ secrets.HOOK_URL }}
+          text: "✅ End Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
+          username: 'DeployBot'
+          icon_emoji: ":rocket:"
