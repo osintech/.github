@@ -228,7 +228,12 @@ jobs:
             const allowed = ['+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes'];
             const reaction = allowed.includes(process.env.ACK_REACTION) ? process.env.ACK_REACTION : 'eyes';
 
+            // owner / repo を明示しないと reusable workflow 実行時に URL が repos///.. となり 404 になるため指定する
+            const { owner, repo } = context.repo;
+
             await github.rest.reactions.createForIssueComment({
+              owner,
+              repo,
               comment_id: commentId,
               content: reaction,
             });
