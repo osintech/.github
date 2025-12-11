@@ -1,0 +1,234 @@
+name: PR Comment Deploy Dispatcher
+
+on:
+  workflow_call:
+    inputs:
+      staging_command:
+        type: string
+        default: /deploy-staging
+      staging_env:
+        type: string
+        default: dev
+      dispatch_workflow_id:
+        type: string
+        default: deploy.yml
+      allow_permissions:
+        type: string
+        default: admin,maintain,write
+      acknowledge_reaction:
+        type: string
+        default: eyes
+
+jobs:
+  dispatch:
+    name: Dispatch deploy workflow
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Prepare comment context
+        id: context
+        uses: actions/github-script@v7
+        env:
+          STAGING_COMMAND: ${{ inputs.staging_command }}
+        with:
+          script: |
+            const stagingCommand = process.env.STAGING_COMMAND;
+            const commentBody = (context.payload.comment?.body || '').trim();
+            const command = commentBody.split(/\s+/)[0];
+            const isStaging = command === stagingCommand;
+            const triggered = isStaging;
+
+            const issueNumber = context.payload.issue?.number ?? context.payload.pull_request?.number;
+            if (!issueNumber) {
+              core.setFailed('This workflow must be triggered from a pull request comment.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const pr =
+              context.payload.pull_request ??
+              (await github.rest.pulls.get({ owner, repo, pull_number: issueNumber })).data;
+
+            const isFork = pr.head.repo?.full_name !== pr.base.repo?.full_name;
+
+            core.setOutput('triggered', String(triggered));
+            core.setOutput('command', command || '');
+            core.setOutput('is_staging', String(isStaging));
+            core.setOutput('issue_number', String(issueNumber));
+            core.setOutput('comment_id', String(context.payload.comment?.id || ''));
+            core.setOutput('pull_number', String(pr.number));
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('is_fork', String(isFork));
+            core.setOutput('commenter', context.payload.comment?.user?.login || '');
+
+            if (!triggered) {
+              core.notice('No matching deploy command found in the comment.');
+            }
+
+      - name: Validate request
+        id: validate
+        if: steps.context.outputs.triggered == 'true'
+        uses: actions/github-script@v7
+        env:
+          COMMENTER: ${{ steps.context.outputs.commenter }}
+          IS_FORK: ${{ steps.context.outputs.is_fork }}
+          IS_STAGING: ${{ steps.context.outputs.is_staging }}
+          HEAD_REF: ${{ steps.context.outputs.head_ref }}
+          STAGING_ENV: ${{ inputs.staging_env }}
+          ALLOW_PERMISSIONS: ${{ inputs.allow_permissions }}
+        with:
+          script: |
+            const allowed = (process.env.ALLOW_PERMISSIONS || '')
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean);
+
+            const { owner, repo } = context.repo;
+            const username = process.env.COMMENTER;
+            const result = { ok: false, response: '', target: '', dispatchRef: '', environment: '' };
+
+            if (!username) {
+              core.setFailed('Commenter is required to authorize deployment commands.');
+              core.setOutput('result', 'denied');
+              core.setOutput('response', 'Unable to determine commenter for deployment command.');
+              return;
+            }
+
+            let permission = 'none';
+            try {
+              const permissionRes = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner,
+                repo,
+                username,
+              });
+              permission = permissionRes.data.permission;
+            } catch (error) {
+              permission = 'none';
+            }
+
+            core.setOutput('permission', permission);
+
+            if (!allowed.includes(permission)) {
+              const response = `@${username} does not have permission to run deployment commands. (${permission})`;
+              core.setFailed(response);
+              core.setOutput('result', 'denied');
+              core.setOutput('response', response);
+              return;
+            }
+
+            if (process.env.IS_FORK === 'true') {
+              const response = 'Deployment commands cannot be run from forked pull requests.';
+              core.setFailed(response);
+              core.setOutput('result', 'denied');
+              core.setOutput('response', response);
+              return;
+            }
+
+            result.ok = true;
+            result.target = 'staging';
+            result.dispatchRef = process.env.HEAD_REF;
+            result.environment = process.env.STAGING_ENV;
+            result.response = `Accepted deployment request by @${username}.`;
+
+            core.setOutput('result', 'ok');
+            core.setOutput('target', result.target);
+            core.setOutput('dispatch_ref', result.dispatchRef);
+            core.setOutput('environment', result.environment);
+            core.setOutput('response', result.response);
+
+      - name: Dispatch deploy workflow
+        id: dispatch
+        if: steps.validate.outputs.result == 'ok'
+        uses: actions/github-script@v7
+        env:
+          DISPATCH_REF: ${{ steps.validate.outputs.dispatch_ref }}
+          ENVIRONMENT: ${{ steps.validate.outputs.environment }}
+          COMMAND: ${{ steps.context.outputs.command }}
+          WORKFLOW_ID: ${{ inputs.dispatch_workflow_id }}
+        with:
+          script: |
+            const workflow = process.env.WORKFLOW_ID;
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflow,
+                ref: process.env.DISPATCH_REF,
+                inputs: {
+                  environment: process.env.ENVIRONMENT,
+                },
+              });
+
+              const msg = `Dispatched ${workflow} with ref ${process.env.DISPATCH_REF} for environment ${process.env.ENVIRONMENT}.`;
+              core.setOutput('status', 'ok');
+              core.setOutput('message', msg);
+            } catch (error) {
+              core.setFailed(error.message);
+              core.setOutput('status', 'failed');
+              core.setOutput('error', error.message);
+            }
+
+      - name: Respond on pull request
+        if: always() && steps.context.outputs.triggered == 'true'
+        uses: actions/github-script@v7
+        env:
+          RESULT: ${{ steps.validate.outputs.result }}
+          RESPONSE: ${{ steps.validate.outputs.response }}
+          ISSUE_NUMBER: ${{ steps.context.outputs.issue_number }}
+          TARGET: ${{ steps.validate.outputs.target }}
+          DISPATCH_MESSAGE: ${{ steps.dispatch.outputs.message }}
+          DISPATCH_STATUS: ${{ steps.dispatch.outputs.status }}
+          DISPATCH_ERROR: ${{ steps.dispatch.outputs.error }}
+          COMMAND: ${{ steps.context.outputs.command }}
+          DISPATCH_REF: ${{ steps.validate.outputs.dispatch_ref }}
+          ENVIRONMENT: ${{ steps.validate.outputs.environment }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const validateOk = process.env.RESULT === 'ok';
+            const dispatchOk = (process.env.DISPATCH_STATUS || 'ok') === 'ok';
+            const isOk = validateOk && dispatchOk;
+            const command = process.env.COMMAND;
+
+            let body = '';
+            if (!validateOk) {
+              body = `⚠️ Deployment command \`${command}\` was not run. ${process.env.RESPONSE}`;
+            } else if (!dispatchOk) {
+              body = `⚠️ Deployment command \`${command}\` failed to dispatch. ${process.env.DISPATCH_ERROR || 'Unknown error.'}`;
+            } else {
+              body = [
+                `🚀 Deployment command \`${command}\` accepted.`,
+                `- environment: ${process.env.ENVIRONMENT} (${process.env.TARGET})`,
+                `- ref: ${process.env.DISPATCH_REF}`,
+                process.env.DISPATCH_MESSAGE,
+              ].join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body,
+            });
+
+      - name: React on comment
+        if: always() && steps.context.outputs.triggered == 'true' && steps.context.outputs.comment_id != ''
+        uses: actions/github-script@v7
+        env:
+          COMMENT_ID: ${{ steps.context.outputs.comment_id }}
+          ACK_REACTION: ${{ inputs.acknowledge_reaction }}
+        with:
+          script: |
+            const commentId = Number(process.env.COMMENT_ID);
+            const allowed = ['+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes'];
+            const reaction = allowed.includes(process.env.ACK_REACTION) ? process.env.ACK_REACTION : 'eyes';
+
+            await github.rest.reactions.createForIssueComment({
+              comment_id: commentId,
+              content: reaction,
+            });
