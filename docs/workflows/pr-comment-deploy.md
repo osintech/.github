@@ -30,7 +30,7 @@ jobs:
   pr-comment-deploy:
     if: github.event.issue.pull_request != '' &&
         startsWith(github.event.comment.body, '/deploy-staging') # `with.staging_command` と同じ値にすること
-    uses: YOUR-ORG/.github/.github/workflows/pr-comment-deploy.yml@main
+    uses: YOUR-ORG/.github/.github/workflows/pr-comment-deploy.yml@master
     secrets: inherit
     with:
       dispatch_workflow_id: deploy.yml         # 起動する workflow ファイル名
