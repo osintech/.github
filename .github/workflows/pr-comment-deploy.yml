@@ -178,13 +178,13 @@ jobs:
         if: always() && steps.context.outputs.triggered == 'true'
         uses: actions/github-script@v7
         env:
-          # 結果が空でも dispatch が成功していれば OK とみなすためデフォルト ok を入れる
-          RESULT: ${{ steps.validate.outputs.result || 'ok' }}
+          RESULT: ${{ steps.validate.outputs.result }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
           RESPONSE: ${{ steps.validate.outputs.response }}
           ISSUE_NUMBER: ${{ steps.context.outputs.issue_number }}
           TARGET: ${{ steps.validate.outputs.target }}
           DISPATCH_MESSAGE: ${{ steps.dispatch.outputs.message }}
-          DISPATCH_STATUS: ${{ steps.dispatch.outputs.status }}
+          DISPATCH_STATUS: ${{ steps.dispatch.outputs.status || '' }}
           DISPATCH_ERROR: ${{ steps.dispatch.outputs.error }}
           COMMAND: ${{ steps.context.outputs.command }}
           DISPATCH_REF: ${{ steps.validate.outputs.dispatch_ref }}
@@ -192,8 +192,10 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const validateOk = process.env.RESULT === 'ok';
-            const dispatchOk = (process.env.DISPATCH_STATUS || 'ok') === 'ok';
+            // 成功判定: result が ok か、ステップ outcome が success のいずれか
+            const validateOk = (process.env.RESULT || '') === 'ok' || process.env.VALIDATE_OUTCOME === 'success';
+            // dispatch ステップが実行され成功時のみ ok。スキップ時は空で false になる
+            const dispatchOk = process.env.DISPATCH_STATUS === 'ok';
             const isOk = validateOk && dispatchOk;
             const command = process.env.COMMAND;
 
