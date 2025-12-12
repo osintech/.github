@@ -143,7 +143,8 @@ jobs:
 
       - name: Dispatch deploy workflow
         id: dispatch
-        if: steps.validate.outputs.result == 'ok'
+        # validate ステップが成功（=権限チェックを通過）した場合のみ実行
+        if: steps.validate.outcome == 'success'
         uses: actions/github-script@v7
         env:
           DISPATCH_REF: ${{ steps.validate.outputs.dispatch_ref }}
