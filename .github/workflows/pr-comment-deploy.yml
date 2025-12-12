@@ -199,19 +199,16 @@ jobs:
             const isOk = validateOk && dispatchOk;
             const command = process.env.COMMAND;
 
-            let body = '';
-            if (!validateOk) {
-              body = `⚠️ Deployment command \`${command}\` was not run. ${process.env.RESPONSE}`;
-            } else if (!dispatchOk) {
-              body = `⚠️ Deployment command \`${command}\` failed to dispatch. ${process.env.DISPATCH_ERROR || 'Unknown error.'}`;
-            } else {
-              body = [
-                `🚀 Deployment command \`${command}\` accepted.`,
-                `- environment: ${process.env.ENVIRONMENT} (${process.env.TARGET})`,
-                `- ref: ${process.env.DISPATCH_REF}`,
-                process.env.DISPATCH_MESSAGE,
-              ].join('\n');
+            // 成功時は新規コメントを付けず、後続の React ステップで元コメントにリアクションのみ付与
+            if (isOk) {
+              core.info('Deployment request succeeded. Skipping extra comment and relying on reaction.');
+              return;
             }
+
+            // 失敗時のみ PR にコメントを追加
+            const body = !validateOk
+              ? `⚠️ Deployment command \`${command}\` was not run. ${process.env.RESPONSE}`
+              : `⚠️ Deployment command \`${command}\` failed to dispatch. ${process.env.DISPATCH_ERROR || 'Unknown error.'}`;
 
             await github.rest.issues.createComment({
               owner,
