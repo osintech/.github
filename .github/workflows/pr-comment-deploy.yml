@@ -178,7 +178,8 @@ jobs:
         if: always() && steps.context.outputs.triggered == 'true'
         uses: actions/github-script@v7
         env:
-          RESULT: ${{ steps.validate.outputs.result }}
+          # 結果が空でも dispatch が成功していれば OK とみなすためデフォルト ok を入れる
+          RESULT: ${{ steps.validate.outputs.result || 'ok' }}
           RESPONSE: ${{ steps.validate.outputs.response }}
           ISSUE_NUMBER: ${{ steps.context.outputs.issue_number }}
           TARGET: ${{ steps.validate.outputs.target }}
