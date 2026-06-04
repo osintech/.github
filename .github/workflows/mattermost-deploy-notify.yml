@@ -23,18 +23,36 @@ jobs:
     steps:
       - name: type before-deploy
         if: ${{ inputs.type == 'before-deploy' }}
-        uses: komarnitskyi/action-mattermost-notification@v0.1.2-beta
-        with:
-          webhook: ${{ secrets.HOOK_URL }}
-          text: "🏁 Start Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
-          username: 'DeployBot'
-          icon_emoji: ":rocket:"
+        env:
+          HOOK_URL: ${{ secrets.HOOK_URL }}
+          TEXT: "🏁 Start Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK_URL:-}" ]; then
+            echo "HOOK_URL is not set; skip Mattermost notification"
+            exit 0
+          fi
+
+          python3 -c 'import json, os; print(json.dumps({"text": os.environ["TEXT"], "username": "DeployBot", "icon_emoji": ":rocket:"}))' \
+            | curl --fail-with-body --silent --show-error \
+                --header 'Content-Type: application/json' \
+                --data @- \
+                "${HOOK_URL}"
 
       - name: type after-deploy
         if: ${{ inputs.type == 'after-deploy' }}
-        uses: komarnitskyi/action-mattermost-notification@v0.1.2-beta
-        with:
-          webhook: ${{ secrets.HOOK_URL }}
-          text: "✅ End Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
-          username: 'DeployBot'
-          icon_emoji: ":rocket:"
+        env:
+          HOOK_URL: ${{ secrets.HOOK_URL }}
+          TEXT: "✅ End Deployment\nProject: ${{ env.repo_link_text }}\nBranch: ${{ github.ref_name }}\nEnvirontment: ${{ inputs.environment }}\n${{ env.detail_link_text }}"
+        run: |
+          set -euo pipefail
+          if [ -z "${HOOK_URL:-}" ]; then
+            echo "HOOK_URL is not set; skip Mattermost notification"
+            exit 0
+          fi
+
+          python3 -c 'import json, os; print(json.dumps({"text": os.environ["TEXT"], "username": "DeployBot", "icon_emoji": ":rocket:"}))' \
+            | curl --fail-with-body --silent --show-error \
+                --header 'Content-Type: application/json' \
+                --data @- \
+                "${HOOK_URL}"
